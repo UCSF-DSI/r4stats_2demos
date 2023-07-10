@@ -1,0 +1,156 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+library(tidyverse)
+library(palmerpenguins)
+library(boot)
+```
+
+```{r}
+penguins_df <- penguins
+penguins_df
+```
+
+
+
+
+# Bootstrapping Standard Error
+
+## Hard Way
+```{r}
+penguins_df %>%
+  group_by(species) %>%
+  summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+  filter(species == "Gentoo") %>%
+  select(mean_bill_length)
+```
+
+
+```{r}
+bootstrapped_mean_bill_lengths <- NULL
+
+for(i in 1:300){
+  bootstrapped_mean_bill_lengths <- bootstrapped_mean_bill_lengths %>%
+    rbind(
+      penguins_df %>%
+        sample_frac(size = 1, replace = TRUE) %>%
+        group_by(species) %>%
+        summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+        filter(species == "Gentoo") %>%
+        select(mean_bill_length)
+    )
+}
+
+bootstrapped_mean_bill_lengths
+```
+
+```{r}
+bootstrapped_mean_bill_lengths %>%
+  ggplot() +
+    geom_histogram(aes(x = mean_bill_length), bins = 20)
+```
+
+```{r}
+bootstrapped_mean_bill_lengths %>%
+  summarize(se_mean_bill_lengths = sd(mean_bill_length))
+```
+## Easier Way
+```{r}
+calc_gentoo_mean_bill_length <- function(resample, i){
+  resample_stat <- resample[i, ] %>%
+    group_by(species) %>%
+    summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+    filter(species == "Gentoo") %>%
+    pull(mean_bill_length)
+  
+  return(resample_stat)
+}
+```
+
+```{r}
+boot(
+  data = penguins_df,
+  statistic = calc_gentoo_mean_bill_length,
+  R = 300
+)
+
+
+```
+## Pull vs Select
+
+
+```{r}
+penguins_df %>%
+  group_by(species) %>%
+  summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+  filter(species == "Gentoo") %>%
+  select(mean_bill_length)
+
+```
+
+```{r}
+penguins_df %>%
+  group_by(species) %>%
+  summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+  filter(species == "Gentoo") %>%
+  pull(mean_bill_length)
+```
+
+# Confidence Intervals
+
+## If bootstrapped resample stats are normally distributed
+Use PE +/- 1.96 * SE
+```{r}
+penguins_df %>%
+  group_by(species) %>%
+  summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+  filter(species == "Gentoo") %>%
+  pull(mean_bill_length)
+```
+```{r}
+CI_lower <- 47.50488-1.96*0.2851716
+CI_upper <- 47.50488+1.96*0.2851716
+```
+
+```{r}
+boot_results <- boot(
+  data = penguins_df,
+  statistic = calc_gentoo_mean_bill_length,
+  R = 2000
+)
+
+```
+
+```{r}
+CI <- boot.ci(boot_results, conf = 0.95, type = "bca")
+
+lower <- CI$bca[4]
+upper <- CI$bca[5]
+```
+
+## Plotting CIs
+```{r}
+pe <- penguins_df %>%
+  group_by(species) %>%
+  summarize(mean_bill_length = mean(bill_length_mm, na.rm = TRUE)) %>%
+  filter(species == "Gentoo") %>%
+  pull(mean_bill_length)
+
+pe
+```
+
+```{r}
+species = "Gentoo"
+
+values_to_plot <- cbind(species, lower, pe, upper) %>% as_tibble()
+values_to_plot %>%
+  ggplot() +
+    geom_point(aes(x = pe, y = species)) +
+    geom_errorbarh(aes(xmin = lower, xmax = upper, y = species, color = species))
+```
+
